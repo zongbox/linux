@@ -283,4 +283,17 @@
 			status = "disabled";
 		};
 	};
+	pmu {
+		compatible = "riscv,pmu";
+		riscv,width-base-cntr = <64>;
+		riscv,width-event-cntr = <40>;
+		riscv,n-event-cntr = <2>;
+		riscv,hw-event-map = <0x0 0x0
+				      0x1 0x1
+				      0x3 0x0202
+				      0x4 0x4000
+				      0x5 0x2001>;
+		riscv,hw-cache-event-map = <0x010201 0x0102
+					    0x010204 0x0802>;
+	};
 };
