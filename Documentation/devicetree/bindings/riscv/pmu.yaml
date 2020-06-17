@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: GPL-2.0
+%YAML 1.2
+---
+$id: http://devicetree.org/schemas/riscv/pmu.yaml#
+$schema: http://devicetree.org/meta-schemas/core.yaml#
+
+title: RISC-V Performance Monitor Units
+
+maintainers:
+  - Zong Li <zong.li@sifive.com>
+  - Paul Walmsley <paul.walmsley@sifive.com>
+  - Palmer Dabbelt <palmer@dabbelt.com>
+
+properties:
+  compatible:
+    items:
+      - const: riscv,pmu
+
+  riscv,width-base-cntr:
+    description: The width of cycle and instret CSRs.
+    $ref: /schemas/types.yaml#/definitions/uint32
+
+  riscv,width-event-cntr:
+    description: The width of hpmcounter CSRs.
+    $ref: /schemas/types.yaml#/definitions/uint32
+
+  riscv,n-event-cntr:
+    description: The number of hpmcounter CSRs.
+    $ref: /schemas/types.yaml#/definitions/uint32
+
+  riscv,hw-event-map:
+    description: The mapping of generic hardware events. Default is no mapping.
+    $ref: /schemas/types.yaml#/definitions/uint32-array
+
+  riscv,hw-cache-event-map:
+    description: The mapping of generic hardware cache events.
+      Default is no mapping.
+    $ref: /schemas/types.yaml#/definitions/uint32-array
+
+required:
+  - compatible
+  - riscv,width-base-cntr
+  - riscv,width-event-cntr
+  - riscv,n-event-cntr
+
+additionalProperties: false
+
+examples:
+  - |
+    pmu {
+      compatible = "riscv,pmu";
+      riscv,width-base-cntr = <64>;
+      riscv,width-event-cntr = <40>;
+      riscv,n-event-cntr = <2>;
+      riscv,hw-event-map = <0x0 0x0 0x1 0x1 0x3 0x0202 0x4 0x4000>;
+      riscv,hw-cache-event-map = <0x010201 0x0102 0x010204 0x0802>;
+    };
+
+...
