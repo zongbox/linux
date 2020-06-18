@@ -12,7 +12,6 @@
 #include <linux/ptrace.h>
 #include <linux/interrupt.h>
 
-#ifdef CONFIG_RISCV_BASE_PMU
 #define RISCV_BASE_COUNTERS	2
 #define RISCV_EVENT_COUNTERS	29
 #define RISCV_TOTAL_COUNTERS	(RISCV_BASE_COUNTERS + RISCV_EVENT_COUNTERS)
@@ -79,7 +78,6 @@
 #define CSR_MHPMEVENT7	0x327
 #define CSR_MHPMEVENT8	0x328
 
-#endif
 #ifdef CONFIG_PERF_EVENTS
 #define perf_arch_bpf_user_pt_regs(regs) (struct user_regs_struct *)regs
 #endif
