@@ -139,6 +139,53 @@ static const int riscv_cache_event_map[PERF_COUNT_HW_CACHE_MAX]
 	},
 };
 
+/*
+ * Methods for checking and getting PMU information
+ */
+
+static inline int is_base_counter(int idx)
+{
+	return (idx == RISCV_PMU_CYCLE || idx == RISCV_PMU_INSTRET);
+}
+
+static inline int is_event_counter(int idx)
+{
+	return (idx >= RISCV_PMU_HPMCOUNTER_FIRST &&
+		idx <= RISCV_PMU_HPMCOUNTER_LAST);
+}
+
+static inline int get_available_counter(struct perf_event *event)
+{
+	struct cpu_hw_events *cpuc = this_cpu_ptr(&cpu_hw_events);
+	struct hw_perf_event *hwc = &event->hw;
+	unsigned long config_base = hwc->config_base & RISCV_PMU_TYPE_MASK;
+	unsigned long mask;
+	int ret;
+
+	switch (config_base) {
+	case RISCV_PMU_TYPE_BASE:
+		ret = hwc->config;
+		if (WARN_ON_ONCE(!is_base_counter(ret)))
+			return -ENOSPC;
+		break;
+	case RISCV_PMU_TYPE_EVENT:
+		mask = ~cpuc->used_cntr_mask;
+		ret = find_next_bit(&mask, RISCV_PMU_HPMCOUNTER_LAST, 3);
+		if (WARN_ON_ONCE(!is_event_counter(ret)))
+			return -ENOSPC;
+		break;
+	default:
+		return -ENOENT;
+	}
+
+	__set_bit(ret, &cpuc->used_cntr_mask);
+
+	return ret;
+}
+
+/*
+ * Map generic hardware event
+ */
 static int riscv_map_hw_event(u64 config)
 {
 	if (config >= riscv_pmu->max_events)
@@ -147,32 +194,28 @@ static int riscv_map_hw_event(u64 config)
 	return riscv_pmu->hw_events[config];
 }
 
-static int riscv_map_cache_decode(u64 config, unsigned int *type,
-			   unsigned int *op, unsigned int *result)
-{
-	return -ENOENT;
-}
-
+/*
+ * Map generic hardware cache event
+ */
 static int riscv_map_cache_event(u64 config)
 {
 	unsigned int type, op, result;
-	int err = -ENOENT;
-		int code;
+	int ret;
 
-	err = riscv_map_cache_decode(config, &type, &op, &result);
-	if (!riscv_pmu->cache_events || err)
-		return err;
+	type	= (config >> PERF_HW_CACHE_TYPE) & PERF_HW_CACHE_MASK;
+	op	= (config >> PERF_HW_CACHE_OP) & PERF_HW_CACHE_MASK;
+	result	= (config >> PERF_HW_CACHE_RESULT) & PERF_HW_CACHE_MASK;
 
 	if (type >= PERF_COUNT_HW_CACHE_MAX ||
 	    op >= PERF_COUNT_HW_CACHE_OP_MAX ||
 	    result >= PERF_COUNT_HW_CACHE_RESULT_MAX)
 		return -EINVAL;
 
-	code = (*riscv_pmu->cache_events)[type][op][result];
-	if (code == RISCV_OP_UNSUPP)
+	ret = riscv_cache_event_map[type][op][result];
+	if (ret == RISCV_OP_UNSUPP)
 		return -EINVAL;
 
-	return code;
+	return ret == RISCV_OP_UNSUPP ? -ENOENT : ret;
 }
 
 /*
@@ -190,8 +233,27 @@ static inline u64 read_counter(int idx)
 	case RISCV_PMU_INSTRET:
 		val = csr_read(CSR_INSTRET);
 		break;
+	case RISCV_PMU_HPMCOUNTER3:
+		val = csr_read(CSR_HPMCOUNTER3);
+		break;
+	case RISCV_PMU_HPMCOUNTER4:
+		val = csr_read(CSR_HPMCOUNTER4);
+		break;
+	case RISCV_PMU_HPMCOUNTER5:
+		val = csr_read(CSR_HPMCOUNTER5);
+		break;
+	case RISCV_PMU_HPMCOUNTER6:
+		val = csr_read(CSR_HPMCOUNTER6);
+		break;
+	case RISCV_PMU_HPMCOUNTER7:
+		val = csr_read(CSR_HPMCOUNTER7);
+		break;
+	case RISCV_PMU_HPMCOUNTER8:
+		val = csr_read(CSR_HPMCOUNTER8);
+		break;
 	default:
-		WARN_ON_ONCE(idx < 0 ||	idx > RISCV_MAX_COUNTERS);
+		WARN_ON_ONCE(idx < RISCV_PMU_CYCLE ||
+			     idx > RISCV_TOTAL_COUNTERS);
 		return -EINVAL;
 	}
 
@@ -202,6 +264,68 @@ static inline void write_counter(int idx, u64 value)
 {
 	/* currently not supported */
 	WARN_ON_ONCE(1);
+}
+
+static inline void write_event(int idx, u64 value)
+{
+	/* TODO: We shouldn't write CSR of m-mode explicitly here. Ideally,
+	 * it need to set the event selector by SBI call or the s-mode
+	 * shadow CSRs of them. Exploit illegal instruction exception to
+	 * emulate mhpmcounterN access in m-mode.
+	 */
+	switch (idx) {
+	case RISCV_PMU_HPMCOUNTER3:
+		csr_write(CSR_MHPMEVENT3, value);
+		break;
+	case RISCV_PMU_HPMCOUNTER4:
+		csr_write(CSR_MHPMEVENT4, value);
+		break;
+	case RISCV_PMU_HPMCOUNTER5:
+		csr_write(CSR_MHPMEVENT5, value);
+		break;
+	case RISCV_PMU_HPMCOUNTER6:
+		csr_write(CSR_MHPMEVENT6, value);
+		break;
+	case RISCV_PMU_HPMCOUNTER7:
+		csr_write(CSR_MHPMEVENT7, value);
+		break;
+	case RISCV_PMU_HPMCOUNTER8:
+		csr_write(CSR_MHPMEVENT8, value);
+		break;
+	default:
+		WARN_ON_ONCE(idx < RISCV_PMU_HPMCOUNTER3 ||
+			     idx > RISCV_TOTAL_COUNTERS);
+		return;
+	}
+}
+
+/*
+ * Enable and disable event counters
+ */
+
+static inline void riscv_pmu_enable_event(struct perf_event *event)
+{
+	struct hw_perf_event *hwc = &event->hw;
+	int idx = hwc->idx;
+
+	if (is_event_counter(idx))
+		write_event(idx, hwc->config);
+
+	/*
+	 * Since we cannot write to counters, this serves as an initialization
+	 * to the delta-mechanism in pmu->read(); otherwise, the delta would be
+	 * wrong when pmu->read is called for the first time.
+	 */
+	local64_set(&hwc->prev_count, read_counter(hwc->idx));
+}
+
+static inline void riscv_pmu_disable_event(struct perf_event *event)
+{
+	struct hw_perf_event *hwc = &event->hw;
+	int idx = hwc->idx;
+
+	if (is_event_counter(idx))
+		write_event(idx, 0);
 }
 
 /*
@@ -232,6 +356,7 @@ static void riscv_pmu_read(struct perf_event *event)
 	 */
 	delta = (new_raw_count - prev_raw_count) &
 		((1ULL << riscv_pmu->counter_width) - 1);
+
 	local64_add(delta, &event->count);
 	/*
 	 * Something like local64_sub(delta, &hwc->period_left) here is
@@ -252,6 +377,11 @@ static void riscv_pmu_stop(struct perf_event *event, int flags)
 {
 	struct hw_perf_event *hwc = &event->hw;
 
+	if (WARN_ON_ONCE(hwc->idx == -1))
+		return;
+
+	riscv_pmu_disable_event(event);
+
 	WARN_ON_ONCE(hwc->state & PERF_HES_STOPPED);
 	hwc->state |= PERF_HES_STOPPED;
 
@@ -271,6 +401,9 @@ static void riscv_pmu_start(struct perf_event *event, int flags)
 	if (WARN_ON_ONCE(!(event->hw.state & PERF_HES_STOPPED)))
 		return;
 
+	if (WARN_ON_ONCE(hwc->idx == -1))
+		return;
+
 	if (flags & PERF_EF_RELOAD) {
 		WARN_ON_ONCE(!(event->hw.state & PERF_HES_UPTODATE));
 
@@ -281,14 +414,10 @@ static void riscv_pmu_start(struct perf_event *event, int flags)
 	}
 
 	hwc->state = 0;
-	perf_event_update_userpage(event);
 
-	/*
-	 * Since we cannot write to counters, this serves as an initialization
-	 * to the delta-mechanism in pmu->read(); otherwise, the delta would be
-	 * wrong when pmu->read is called for the first time.
-	 */
-	local64_set(&hwc->prev_count, read_counter(hwc->idx));
+	riscv_pmu_enable_event(event);
+
+	perf_event_update_userpage(event);
 }
 
 /*
@@ -298,21 +427,18 @@ static int riscv_pmu_add(struct perf_event *event, int flags)
 {
 	struct cpu_hw_events *cpuc = this_cpu_ptr(&cpu_hw_events);
 	struct hw_perf_event *hwc = &event->hw;
+	int count_idx;
 
 	if (cpuc->n_events == riscv_pmu->num_counters)
 		return -ENOSPC;
 
-	/*
-	 * We don't have general conunters, so no binding-event-to-counter
-	 * process here.
-	 *
-	 * Indexing using hwc->config generally not works, since config may
-	 * contain extra information, but here the only info we have in
-	 * hwc->config is the event index.
-	 */
-	hwc->idx = hwc->config;
-	cpuc->events[hwc->idx] = event;
+	count_idx = get_available_counter(event);
+	if (count_idx < 0)
+		return -ENOSPC;
+
 	cpuc->n_events++;
+	hwc->idx = count_idx;
+	cpuc->events[hwc->idx] = event;
 
 	hwc->state = PERF_HES_UPTODATE | PERF_HES_STOPPED;
 
@@ -330,8 +456,10 @@ static void riscv_pmu_del(struct perf_event *event, int flags)
 	struct cpu_hw_events *cpuc = this_cpu_ptr(&cpu_hw_events);
 	struct hw_perf_event *hwc = &event->hw;
 
-	cpuc->events[hwc->idx] = NULL;
 	cpuc->n_events--;
+	__clear_bit(hwc->idx, &cpuc->used_cntr_mask);
+
+	cpuc->events[hwc->idx] = NULL;
 	riscv_pmu->pmu->stop(event, PERF_EF_UPDATE);
 	perf_event_update_userpage(event);
 }
@@ -385,6 +513,7 @@ static int riscv_event_init(struct perf_event *event)
 {
 	struct perf_event_attr *attr = &event->attr;
 	struct hw_perf_event *hwc = &event->hw;
+	unsigned long config_base = 0;
 	int err;
 	int code;
 
@@ -406,10 +535,16 @@ static int riscv_event_init(struct perf_event *event)
 		code = riscv_pmu->map_cache_event(attr->config);
 		break;
 	case PERF_TYPE_RAW:
-		return -EOPNOTSUPP;
+		code = attr->config;
+		break;
 	default:
 		return -ENOENT;
 	}
+
+	if (is_base_counter(code))
+		config_base |= RISCV_PMU_TYPE_BASE;
+	else
+		config_base |= RISCV_PMU_TYPE_EVENT;
 
 	event->destroy = riscv_event_destroy;
 	if (code < 0) {
@@ -424,6 +559,7 @@ static int riscv_event_init(struct perf_event *event)
 	 * But since we don't have such support, later in pmu->add(), we just
 	 * use hwc->config as the index instead.
 	 */
+	hwc->config_base = config_base;
 	hwc->config = code;
 	hwc->idx = -1;
 

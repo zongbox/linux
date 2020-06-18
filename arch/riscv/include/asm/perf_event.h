@@ -14,39 +14,64 @@
 
 #ifdef CONFIG_RISCV_BASE_PMU
 #define RISCV_BASE_COUNTERS	2
+#define RISCV_EVENT_COUNTERS	29
+#define RISCV_TOTAL_COUNTERS	(RISCV_BASE_COUNTERS + RISCV_EVENT_COUNTERS)
 
 /*
- * The RISCV_MAX_COUNTERS parameter should be specified.
- */
-
-#define RISCV_MAX_COUNTERS	2
-
-/*
- * These are the indexes of bits in counteren register *minus* 1,
- * except for cycle.  It would be coherent if it can directly mapped
- * to counteren bit definition, but there is a *time* register at
- * counteren[1].  Per-cpu structure is scarce resource here.
- *
  * According to the spec, an implementation can support counter up to
  * mhpmcounter31, but many high-end processors has at most 6 general
  * PMCs, we give the definition to MHPMCOUNTER8 here.
  */
-#define RISCV_PMU_CYCLE		0
-#define RISCV_PMU_INSTRET	1
-#define RISCV_PMU_MHPMCOUNTER3	2
-#define RISCV_PMU_MHPMCOUNTER4	3
-#define RISCV_PMU_MHPMCOUNTER5	4
-#define RISCV_PMU_MHPMCOUNTER6	5
-#define RISCV_PMU_MHPMCOUNTER7	6
-#define RISCV_PMU_MHPMCOUNTER8	7
+#define RISCV_PMU_CYCLE			0
+#define RISCV_PMU_INSTRET		2
+#define RISCV_PMU_HPMCOUNTER3		3
+#define RISCV_PMU_HPMCOUNTER4		4
+#define RISCV_PMU_HPMCOUNTER5		5
+#define RISCV_PMU_HPMCOUNTER6		6
+#define RISCV_PMU_HPMCOUNTER7		7
+#define RISCV_PMU_HPMCOUNTER8		8
+
+#define RISCV_PMU_HPMCOUNTER_FIRST	3
+#define RISCV_PMU_HPMCOUNTER_LAST					\
+	(RISCV_PMU_HPMCOUNTER_FIRST + riscv_pmu->num_counters - 1)
 
 #define RISCV_OP_UNSUPP		(-EOPNOTSUPP)
+
+/* Hardware cache event encoding */
+#define PERF_HW_CACHE_TYPE		0
+#define PERF_HW_CACHE_OP		8
+#define PERF_HW_CACHE_RESULT		16
+#define PERF_HW_CACHE_MASK		0xff
+
+/* config_base encoding */
+#define RISCV_PMU_TYPE_MASK		0x3
+#define RISCV_PMU_TYPE_BASE		0x1
+#define RISCV_PMU_TYPE_EVENT		0x2
+#define RISCV_PMU_EXCLUDE_MASK		0xc
+#define RISCV_PMU_EXCLUDE_USER		0x3
+#define RISCV_PMU_EXCLUDE_KERNEL	0x4
+
+/*
+ * Currently, machine-mode supports emulation of mhpmeventN. Setting mhpmeventN
+ * to raise an illegal instruction exception to set event types in machine-mode.
+ * Eventually, we should set event types through standard SBI call or the shadow
+ * CSRs of supervisor-mode, because it is weird for writing CSR of machine-mode
+ * explicitly in supervisor-mode. These macro should be removed in the future.
+ */
+#define CSR_MHPMEVENT3	0x323
+#define CSR_MHPMEVENT4	0x324
+#define CSR_MHPMEVENT5	0x325
+#define CSR_MHPMEVENT6	0x326
+#define CSR_MHPMEVENT7	0x327
+#define CSR_MHPMEVENT8	0x328
 
 struct cpu_hw_events {
 	/* # currently enabled events*/
 	int			n_events;
 	/* currently enabled events */
-	struct perf_event	*events[RISCV_MAX_COUNTERS];
+	struct perf_event	*events[RISCV_EVENT_COUNTERS];
+	/* bitmap of used event counters */
+	unsigned long		used_cntr_mask;
 	/* vendor-defined PMU data */
 	void			*platform;
 };
