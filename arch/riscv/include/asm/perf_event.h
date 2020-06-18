@@ -17,6 +17,8 @@
 #define RISCV_EVENT_COUNTERS	29
 #define RISCV_TOTAL_COUNTERS	(RISCV_BASE_COUNTERS + RISCV_EVENT_COUNTERS)
 
+#define RISCV_DEFAULT_WIDTH_COUNTER	64
+
 /*
  * According to the spec, an implementation can support counter up to
  * mhpmcounter31, but many high-end processors has at most 6 general
@@ -33,9 +35,21 @@
 
 #define RISCV_PMU_HPMCOUNTER_FIRST	3
 #define RISCV_PMU_HPMCOUNTER_LAST					\
-	(RISCV_PMU_HPMCOUNTER_FIRST + riscv_pmu->num_counters - 1)
+	(RISCV_PMU_HPMCOUNTER_FIRST + riscv_pmu.num_event_cntr - 1)
 
-#define RISCV_OP_UNSUPP		(-EOPNOTSUPP)
+#define RISCV_OP_UNSUPP			(-EOPNOTSUPP)
+
+#define RISCV_MAP_ALL_UNSUPPORTED					\
+	[0 ... PERF_COUNT_HW_MAX - 1] = RISCV_OP_UNSUPP
+
+#define C(x) PERF_COUNT_HW_CACHE_##x
+
+#define RISCV_CACHE_MAP_ALL_UNSUPPORTED					\
+[0 ... C(MAX) - 1] = {							\
+	[0 ... C(OP_MAX) - 1] = {					\
+		[0 ... C(RESULT_MAX) - 1] = RISCV_OP_UNSUPP,		\
+	},								\
+}
 
 /* Hardware cache event encoding */
 #define PERF_HW_CACHE_TYPE		0
@@ -64,43 +78,6 @@
 #define CSR_MHPMEVENT6	0x326
 #define CSR_MHPMEVENT7	0x327
 #define CSR_MHPMEVENT8	0x328
-
-struct cpu_hw_events {
-	/* # currently enabled events*/
-	int			n_events;
-	/* currently enabled events */
-	struct perf_event	*events[RISCV_EVENT_COUNTERS];
-	/* bitmap of used event counters */
-	unsigned long		used_cntr_mask;
-	/* vendor-defined PMU data */
-	void			*platform;
-};
-
-struct riscv_pmu {
-	struct pmu	*pmu;
-
-	/* generic hw/cache events table */
-	const int	*hw_events;
-	const int	(*cache_events)[PERF_COUNT_HW_CACHE_MAX]
-				       [PERF_COUNT_HW_CACHE_OP_MAX]
-				       [PERF_COUNT_HW_CACHE_RESULT_MAX];
-	/* method used to map hw/cache events */
-	int		(*map_hw_event)(u64 config);
-	int		(*map_cache_event)(u64 config);
-
-	/* max generic hw events in map */
-	int		max_events;
-	/* number total counters, 2(base) + x(general) */
-	int		num_counters;
-	/* the width of the counter */
-	int		counter_width;
-
-	/* vendor-defined PMU features */
-	void		*platform;
-
-	irqreturn_t	(*handle_irq)(int irq_num, void *dev);
-	int		irq;
-};
 
 #endif
 #ifdef CONFIG_PERF_EVENTS
